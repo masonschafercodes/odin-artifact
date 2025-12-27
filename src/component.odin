@@ -111,8 +111,9 @@ component_add_raw :: proc(world: ^World, entity: Entity, value: any) -> bool {
 		col_idx := archetype_find_column_by_id(source_arch, value.id)
 		if col_idx >= 0 {
 			col := &source_arch.columns[col_idx]
-			dest := rawptr(uintptr(col.data) + uintptr(int(record.row_index) * col.info.size))
-			mem.copy(dest, value.data, col.info.size)
+			if dest, ok := column_get_ptr(col, int(record.row_index)); ok {
+				mem.copy(dest, value.data, col.info.size)
+			}
 		}
 		return true
 	}
@@ -126,8 +127,9 @@ component_add_raw :: proc(world: ^World, entity: Entity, value: any) -> bool {
 	col_idx := archetype_find_column_by_id(target_arch, value.id)
 	if col_idx >= 0 {
 		col := &target_arch.columns[col_idx]
-		dest := rawptr(uintptr(col.data) + uintptr(int(new_row) * col.info.size))
-		mem.copy(dest, value.data, col.info.size)
+		if dest, ok := column_get_ptr(col, int(new_row)); ok {
+			mem.copy(dest, value.data, col.info.size)
+		}
 	}
 
 	return true
@@ -305,10 +307,11 @@ move_entity_to_archetype :: proc(
 		src_col := &source_arch.columns[src_col_idx]
 		tgt_col := &target_arch.columns[tgt_col_idx]
 
-		size := src_col.info.size
-		src_ptr := rawptr(uintptr(src_col.data) + uintptr(int(source_row) * size))
-		tgt_ptr := rawptr(uintptr(tgt_col.data) + uintptr(int(new_row) * size))
-		mem.copy(tgt_ptr, src_ptr, size)
+		src_ptr, src_ok := column_get_ptr(src_col, int(source_row))
+		tgt_ptr, tgt_ok := column_get_ptr(tgt_col, int(new_row))
+		if src_ok && tgt_ok {
+			mem.copy(tgt_ptr, src_ptr, src_col.info.size)
+		}
 	}
 
 	if swapped, ok := archetype_remove_entity(source_arch, source_row).?; ok {

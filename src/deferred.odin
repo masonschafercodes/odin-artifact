@@ -26,13 +26,17 @@ deferred_destroy :: proc(world: ^World, entity: Entity) {
 	append(&world.deferred_ops, Deferred_Op(Deferred_Destroy{entity = entity}))
 }
 
-deferred_add :: proc(world: ^World, entity: Entity, value: $T) {
-	data, _ := mem.alloc(size_of(T), align_of(T), world.allocator)
+deferred_add :: proc(world: ^World, entity: Entity, value: $T) -> bool {
+	data, err := mem.alloc(size_of(T), align_of(T), world.allocator)
+	if err != .None || data == nil {
+		return false
+	}
 	(cast(^T)data)^ = value
 	append(
 		&world.deferred_ops,
 		Deferred_Op(Deferred_Add{entity = entity, value = any{data = data, id = typeid_of(T)}}),
 	)
+	return true
 }
 
 deferred_remove :: proc(world: ^World, entity: Entity, $T: typeid) {
