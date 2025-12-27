@@ -15,6 +15,7 @@ Artifact organizes entities by their component composition using archetypes. Ent
 -   **Query caching**: Repeated queries are cached and invalidated only when archetypes change
 -   **Deferred operations**: Safe structural changes during iteration
 -   **SIMD-friendly alignment**: 32-byte aligned component storage
+-   **System scheduler**: Phase-based execution with dependency ordering and topological sort
 
 ## Installation
 
@@ -126,21 +127,67 @@ main :: proc() {
 | `deferred_add(world, entity, value)` | Queue component addition |
 | `deferred_remove(world, entity, T)`  | Queue component removal  |
 
+### System Scheduler
+
+| Function                                          | Description                              |
+| ------------------------------------------------- | ---------------------------------------- |
+| `scheduler_create(allocator)`                     | Create a new scheduler                   |
+| `scheduler_destroy(sched)`                        | Destroy scheduler and free resources     |
+| `scheduler_add_system(sched, name, proc, phase)`  | Register a system in a phase             |
+| `scheduler_get_system(sched, name)`               | Get system ID by name                    |
+| `scheduler_add_dependency(sched, system, dep)`    | Add dependency (dep runs before system)  |
+| `scheduler_add_dependency_by_name(sched, s, dep)` | Add dependency by system names           |
+| `scheduler_set_enabled(sched, system, enabled)`   | Enable or disable a system               |
+| `scheduler_is_enabled(sched, system)`             | Check if system is enabled               |
+| `scheduler_run(sched, world)`                     | Run all systems in order                 |
+| `scheduler_run_phase(sched, world, phase)`        | Run systems in a specific phase          |
+| `scheduler_rebuild_order(sched)`                  | Rebuild execution order (detects cycles) |
+| `scheduler_system_count(sched)`                   | Get total number of systems              |
+| `scheduler_enabled_count(sched)`                  | Get number of enabled systems            |
+
+**System Phases** (execute in order):
+1. `Pre_Update` - Input handling, physics preparation
+2. `Update` - Main game logic
+3. `Post_Update` - Collision response, cleanup
+4. `Render` - Drawing and presentation
+
 ## Usage Patterns
 
 ### System Implementation
 
 ```odin
-movement_system :: proc(world: ^artifact.World, dt: f32) {
+movement_system :: proc(world: ^artifact.World) {
     for arch in artifact.query(world, Position, Velocity).archetypes {
         positions := artifact.archetype_get_column(arch, Position)
         velocities := artifact.archetype_get_column(arch, Velocity)
 
         for i in 0 ..< arch.count {
-            positions[i].x += velocities[i].vx * dt
-            positions[i].y += velocities[i].vy * dt
+            positions[i].x += velocities[i].vx
+            positions[i].y += velocities[i].vy
         }
     }
+}
+```
+
+### Using the Scheduler
+
+```odin
+// Create scheduler
+sched := artifact.scheduler_create()
+defer artifact.scheduler_destroy(&sched)
+
+// Register systems in phases
+artifact.scheduler_add_system(&sched, "input", input_system, .Pre_Update)
+physics_id := artifact.scheduler_add_system(&sched, "physics", physics_system, .Update)
+movement_id := artifact.scheduler_add_system(&sched, "movement", movement_system, .Update)
+artifact.scheduler_add_system(&sched, "render", render_system, .Render)
+
+// Set up dependencies (movement runs after physics)
+artifact.scheduler_add_dependency(&sched, movement_id, physics_id)
+
+// Game loop
+for !should_quit {
+    artifact.scheduler_run(&sched, &world)
 }
 ```
 
