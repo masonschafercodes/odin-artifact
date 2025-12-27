@@ -181,8 +181,9 @@ entity_spawn :: proc(world: ^World, components: ..any) -> (Entity, bool) #option
 		col_idx := archetype_find_column_by_id(arch, id)
 		if col_idx >= 0 {
 			col := &arch.columns[col_idx]
-			dest := rawptr(uintptr(col.data) + uintptr(int(row) * col.info.size))
-			mem.copy(dest, comp.data, col.info.size)
+			if dest, ok := column_get_ptr(col, int(row)); ok {
+				mem.copy(dest, comp.data, col.info.size)
+			}
 		}
 	}
 
@@ -276,8 +277,8 @@ world_get_archetype :: proc(world: ^World, types: ..typeid) -> ^Archetype {
 		t := types[i]
 		reg, ok := world.components[t]
 		if !ok {
-			world_register_component_by_id(world, t)
-			reg = world.components[t]
+			// Component not registered - cannot create archetype with unknown component
+			return nil
 		}
 		mask += {reg.index}
 		indices[i] = reg.index
@@ -289,23 +290,6 @@ world_get_archetype :: proc(world: ^World, types: ..typeid) -> ^Archetype {
 		return nil
 	}
 	return &world.archetypes[arch_idx]
-}
-
-@(private = "file")
-world_register_component_by_id :: proc(world: ^World, id: typeid) -> int {
-	if existing, ok := world.components[id]; ok {
-		return existing.index
-	}
-
-	idx := world.next_comp_idx
-	world.next_comp_idx += 1
-
-	world.components[id] = Component_Registration {
-		info = Component_Info{id = id, size = 0, align = 0},
-		index = idx,
-	}
-
-	return idx
 }
 
 world_entity_count :: proc(world: ^World) -> int {

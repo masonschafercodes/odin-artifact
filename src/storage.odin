@@ -94,6 +94,25 @@ column_set :: proc(col: ^Component_Column, index: int, value: $T) -> bool {
 	return true
 }
 
+// Safe pointer access with bounds checking
+column_get_ptr :: proc(col: ^Component_Column, index: int) -> (rawptr, bool) {
+	if col.data == nil || index < 0 || index >= col.count {
+		return nil, false
+	}
+	// Bounds are validated, so the offset calculation is safe
+	offset := index * col.info.size
+	return rawptr(uintptr(col.data) + uintptr(offset)), true
+}
+
+// Variant that checks against capacity (for writes to new slots)
+column_get_ptr_capacity :: proc(col: ^Component_Column, index: int) -> (rawptr, bool) {
+	if col.data == nil || index < 0 || index >= col.capacity {
+		return nil, false
+	}
+	offset := index * col.info.size
+	return rawptr(uintptr(col.data) + uintptr(offset)), true
+}
+
 column_swap :: proc(col: ^Component_Column, a, b: int) -> bool {
 	if a == b {
 		return true
@@ -112,7 +131,10 @@ column_swap :: proc(col: ^Component_Column, a, b: int) -> bool {
 		mem.copy(ptr_a, ptr_b, size)
 		mem.copy(ptr_b, &temp[0], size)
 	} else {
-		temp := make([]u8, size)
+		temp, err := make([]u8, size)
+		if err != .None || temp == nil {
+			return false
+		}
 		defer delete(temp)
 		mem.copy(&temp[0], ptr_a, size)
 		mem.copy(ptr_a, ptr_b, size)
