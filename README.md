@@ -16,6 +16,7 @@ Artifact organizes entities by their component composition using archetypes. Ent
 -   **Deferred operations**: Safe structural changes during iteration
 -   **SIMD-friendly alignment**: 32-byte aligned component storage
 -   **System scheduler**: Phase-based execution with dependency ordering and topological sort
+-   **Entity hierarchies**: Parent-child relationships for scene graphs, skeletal systems, and UI
 
 ## Installation
 
@@ -89,6 +90,18 @@ main :: proc() {
 | `entity_destroy(world, entity)`     | Destroy an entity                             |
 | `entity_alive(world, entity)`       | Check if entity is alive                      |
 | `entity_is_valid(entity)`           | Check if handle is valid (not INVALID_ENTITY) |
+
+### Entity Hierarchy
+
+| Function                               | Description                                      |
+| -------------------------------------- | ------------------------------------------------ |
+| `entity_set_parent(world, child, par)` | Set entity's parent (INVALID_ENTITY to remove)   |
+| `entity_get_parent(world, child)`      | Get entity's parent (INVALID_ENTITY if root)     |
+| `entity_get_children(world, parent)`   | Get slice of child entities                      |
+| `entity_has_parent(world, entity)`     | Check if entity has a parent                     |
+| `entity_has_children(world, entity)`   | Check if entity has children                     |
+| `entity_child_count(world, entity)`    | Get number of children                           |
+| `deferred_set_parent(world, c, p)`     | Queue parent change (safe during iteration)      |
 
 ### Component Access
 
@@ -227,6 +240,54 @@ for arch in artifact.query(&world, Health).archetypes {
 artifact.world_flush(&world)
 ```
 
+### Entity Hierarchies
+
+Build parent-child relationships for scene graphs, UI systems, or skeletal hierarchies:
+
+```odin
+// Create a simple scene hierarchy
+root, _ := artifact.entity_spawn(&world, Transform{0, 0})
+player, _ := artifact.entity_spawn(&world, Transform{10, 20})
+weapon, _ := artifact.entity_spawn(&world, Transform{1, 0})
+
+// Build hierarchy: root -> player -> weapon
+artifact.entity_set_parent(&world, player, root)
+artifact.entity_set_parent(&world, weapon, player)
+
+// Query relationships
+parent := artifact.entity_get_parent(&world, weapon)  // Returns player
+children := artifact.entity_get_children(&world, player)  // Returns [weapon]
+
+// Check relationships
+if artifact.entity_has_children(&world, player) {
+    count := artifact.entity_child_count(&world, player)
+    fmt.printf("Player has %d children\n", count)
+}
+
+// Reparent an entity
+artifact.entity_set_parent(&world, weapon, root)  // weapon now under root
+
+// Remove parent (make entity a root)
+artifact.entity_set_parent(&world, player, artifact.INVALID_ENTITY)
+
+// When parent is destroyed, children are orphaned (not deleted)
+artifact.entity_destroy(&world, root)
+// weapon is still alive but now has no parent
+```
+
+Hierarchy changes during iteration should use deferred operations:
+
+```odin
+for arch in artifact.query(&world, Transform).archetypes {
+    for i in 0 ..< arch.count {
+        entity := arch.entities[i]
+        // Safe to queue hierarchy changes during iteration
+        artifact.deferred_set_parent(&world, entity, new_parent)
+    }
+}
+artifact.world_flush(&world)
+```
+
 ### Single Entity Component Access
 
 ```odin
@@ -310,6 +371,9 @@ Query results are cached by component mask. The cache is invalidated when new ar
 | Query (cached)       | O(1)                             |
 | Query (uncached)     | O(n) where n = archetype count   |
 | Iteration            | O(m) where m = matching entities |
+| Get parent           | O(1)                             |
+| Get children         | O(1)                             |
+| Set parent           | O(k) where k = sibling count     |
 
 ## License
 
