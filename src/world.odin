@@ -16,6 +16,7 @@ World :: struct {
 	allocator:                  mem.Allocator,
 	deferred_ops:               [dynamic]Deferred_Op,
 	query_cache:                map[Query_Key][dynamic]^Archetype,
+	hierarchy:                  Hierarchy,
 }
 
 world_create :: proc(
@@ -34,6 +35,7 @@ world_create :: proc(
 		allocator = allocator,
 		deferred_ops = make([dynamic]Deferred_Op, allocator),
 		query_cache = make(map[Query_Key][dynamic]^Archetype, allocator = allocator),
+		hierarchy = hierarchy_create(allocator),
 	}
 }
 
@@ -47,6 +49,8 @@ world_destroy :: proc(world: ^World) {
 
 	deferred_ops_clear(world)
 	delete(world.deferred_ops)
+
+	hierarchy_destroy(&world.hierarchy)
 
 	delete(world.archetypes)
 	delete(world.archetype_map)
@@ -194,6 +198,8 @@ entity_destroy :: proc(world: ^World, entity: Entity) -> bool {
 	if !entity_alive(world, entity) {
 		return false
 	}
+
+	hierarchy_on_entity_destroy(&world.hierarchy, entity)
 
 	idx := entity_index(entity)
 	record := &world.entities[idx]
